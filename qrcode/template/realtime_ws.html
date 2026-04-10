@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scanner QR Inteligente</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+
+<h2>📱 Scanner QR (WebSocket)</h2>
+
+<video id="video" width="300" autoplay playsinline></video>
+
+<h3>Resultado:</h3>
+<p id="resultado">-</p>
+
+<h3>Região:</h3>
+<p id="regiao">-</p>
+
+<img id="imagem" width="300"/>
+
+<br><br>
+<a href="/dashboard">📊 Ver Dashboard</a>
+
+<script>
+const socket = io();
+const video = document.getElementById('video');
+
+navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" }
+})
+.then(stream => video.srcObject = stream);
+
+function capturarFrame() {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    return canvas.toDataURL('image/jpeg', 0.5);
+}
+
+// 🔥 Envio inteligente
+setInterval(() => {
+    if (video.videoWidth > 0) {
+        socket.emit("frame", capturarFrame());
+    }
+}, 500);
+
+// Recebe resultado
+socket.on("resultado", (data) => {
+    document.getElementById('resultado').innerText = data.resultado;
+    document.getElementById('regiao').innerText = data.regiao;
+    document.getElementById('imagem').src = data.imagem;
+});
+</script>
+
+</body>
+</html>
