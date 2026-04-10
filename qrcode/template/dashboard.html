@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard Regiões</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>📊 Dashboard de Regiões</h2>
+
+<canvas id="grafico" width="400" height="200"></canvas>
+
+<script>
+const socket = io();
+
+const ctx = document.getElementById('grafico').getContext('2d');
+
+let chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Leituras por Região',
+            data: []
+        }]
+    }
+});
+
+socket.on("dashboard", (data) => {
+    chart.data.labels = Object.keys(data);
+    chart.data.datasets[0].data = Object.values(data);
+    chart.update();
+});
+</script>
+
+</body>
+</html>
