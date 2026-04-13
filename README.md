@@ -1,81 +1,85 @@
 # Sistemas-Inteligentes
 
-Repositório destinado ao desenvolvimento de sistemas inteligentes com integração de hardware e software.
+Repositório com exemplos e artefatos para integração hardware ↔ software em projetos de sistemas inteligentes.
 
-## 📋 Descrição
+## Visão geral
+Conteúdo atual do repositório:
+- templates/dashboard.html — página de visualização (Socket.IO) para mostrar contadores/estatísticas.
+- Script_Garra/Script_Garra_Arduino.ino — sketch Arduino para controle de garra (servos, botões, sensor, buzzer).
+- Script_Lego/Area51.lmsp — arquivo de projeto LEGO (Area51).
 
-Este projeto reúne scripts e componentes para automação e leitura de dados, incluindo:
-- **Controle de Garra com Arduino**: Script Arduino para controle de dispositivos robóticos
-- **Leitura de QR Code**: Scripts Python para captura e processamento de códigos QR
+## Estrutura (resumida)
+Sistemas-Inteligentes/
+- templates/
+  - dashboard.html
+- Script_Garra/
+  - Script_Garra_Arduino.ino
+- Script_Lego/
+  - Area51.lmsp
+- README.md
 
-## 🗂️ Estrutura do Projeto
+## Requisitos (macOS)
+- Homebrew (opcional, para dependências nativas)
+- Python 3.8+
+- Arduino IDE (ou CLI) para upload do sketch
+- (Opcional) Webcam para testes
+- Librarias nativas: zbar (para pyzbar) — instalar via Homebrew
 
-Sistemas-Inteligentes/ ├── arduino/ │ └── garra/ │ └── controle_garra.ino ├── python/ │ └── qrcode/ │ └── leitor_qrcode.py ├── README.md └── requirements.txt
-
-Code
-
-## 🚀 Funcionalidades
-
-### Arduino - Controle de Garra
-Script para controlar uma garra robótica através de Arduino, com comunicação serial e automação de movimentos.
-
-### Python - Leitor de QR Code
-Scripts Python para:
-- Captura de câmera em tempo real
-- Decodificação de QR codes
-- Processamento e armazenamento de dados
-
-## 💻 Requisitos
-
-### Hardware
-- Arduino (Uno, Mega, etc.)
-- Câmera/Webcam (para leitura de QR code)
-- Garra robótica
-- Cabos e componentes eletrônicos
-
-### Software
-- Python 3.7+
-- Arduino IDE
-- Bibliotecas Python (veja `requirements.txt`)
-
-## 📦 Instalação
-
-### Configuração Python
-
+## Instalação (rápida, macOS)
+1. Instalar Homebrew (se necessário):
 ```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+2. Instalar zbar (necessário para pyzbar):
+```bash
+brew update
+brew install zbar
+```
+
+3. Criar e ativar virtualenv no diretório do projeto:
+```bash
+cd /Users/pasta_do_usuario/Sistemas-Inteligentes
+python3 -m venv venv
+source venv/bin/activate
+```
+
+4. Instalar dependências Python (se houver requirements.txt):
+```bash
+pip install --upgrade pip
 pip install -r requirements.txt
-Configuração Arduino
+```
+Se não existir requirements.txt, exemplos de libs úteis:
+```bash
+pip install flask flask_socketio eventlet opencv-python-headless numpy pyzbar pyserial
+```
 
-Abra o Arduino IDE
-Carregue o arquivo .ino da pasta arduino/garra/
-Selecione a porta COM e o modelo de placa
-Faça o upload do código
-🔧 Uso
+## Arduino — upload do sketch
+1. Abra Script_Garra/Script_Garra_Arduino.ino na Arduino IDE.
+2. Selecione placa e porta corretas (Tools → Board / Port).
+3. Faça upload.
+4. Ajuste limites de saída dos servos (variáveis B, G, P, A no código) conforme a montagem.
 
-Executar leitor de QR Code
+## Testes / execução
+- Dashboard: templates/dashboard.html espera receber eventos via Socket.IO; para funcionar, abra a aplicação server-side que emita eventos (ex.: app Flask + Socket.IO). Se não houver servidor, use um servidor de desenvolvimento que suporte Socket.IO ou adapte o arquivo para testes locais.
+- Leitor QR (se houver scripts Python): ative venv e execute o script correspondente. Garanta zbar instalado.
 
-bash
-python python/qrcode/leitor_qrcode.py
-Controlar Garra
+Exemplo geral para execução local (quando existir app.py):
+```bash
+source venv/bin/activate
+python app.py
+# abrir http://localhost:5000/dashboard
+```
 
-Carregue o sketch Arduino e use a comunicação serial para enviar comandos.
+## Boas práticas
+- Faça branch para novas features: git checkout -b feat/nome-da-feature
+- Commits atômicos com mensagens no estilo Conventional Commits (feat:, fix:, chore:, etc.)
+- Teste hardware em bancada antes de operar em condições reais.
 
-📝 Dependências Python
+## Contribuição
+- Abra issues descrevendo o problema/feature.
+- Envie pull requests a partir de branches com alterações específicas.
+- Documente alterações relevantes no README ou em arquivos separados.
 
-As principais dependências estão listadas em requirements.txt:
-
-opencv-python (para processamento de imagem)
-pyzbar (para decodificação de QR code)
-pyserial (para comunicação Arduino)
-🤝 Contribuindo
-
-Para contribuir com o projeto:
-
-Crie uma branch a partir de prd
-Faça suas alterações
-Commit com mensagens descritivas
-Envie um Pull Request
-
-📧 Contato
-
-Para dúvidas ou sugestões, abra uma issue no repositório.
+## Contato
+Abra uma issue no repositório para dúvidas, erros de execução ou solicitações de melhoria.
