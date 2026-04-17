@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard de Separação | Mercado Livre</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1>Sistema de Separação</h1>
+ 
+
+  <main class="painel">
+    <section class="blocos">
+      <div class="bloco bloco-total">
+        <span class="rotulo">Total de Produtos Passados</span>
+        <span id="total" class="valor valor-total">0</span>
+      </div>
+
+      <div class="bloco">
+        <span class="rotulo">Conteúdo Lido</span>
+        <span id="conteudo" class="valor">Aguardando...</span>
+      </div>
+
+      <div class="bloco">
+        <span class="rotulo">Última Leitura</span>
+        <span id="horario" class="valor">--:--:--</span>
+      </div>
+    </section>
+
+    <div class="status">
+      <span class="status-ponto"></span>
+      <span>Monitorando sistema em tempo real</span>
+    </div>
+  </main>
+
+  <footer>Mercado Livre - Painel de Controle</footer>
+
+  <script>
+    const campoTotal = document.getElementById("total");
+    const campoConteudo = document.getElementById("conteudo");
+    const campoHorario = document.getElementById("horario");
+
+    function mostrarErro() {
+      campoConteudo.textContent = "Erro de conexão";
+      campoConteudo.classList.add("erro");
+    }
+
+    function atualizarTela(dados) {
+      campoConteudo.textContent = dados.conteudo || "Nenhum dado";
+      campoConteudo.classList.remove("erro");
+
+      campoHorario.textContent = dados.timestamp || "--:--:--";
+      campoTotal.textContent = dados.total ?? 0;
+    }
+
+    async function buscarDados() {
+      try {
+        const resposta = await fetch("/dados");
+
+        if (!resposta.ok) {
+          throw new Error("Falha ao buscar os dados.");
+        }
+
+        const dados = await resposta.json();
+        atualizarTela(dados);
+      } catch (erro) {
+        console.error("Erro ao atualizar dashboard:", erro);
+        mostrarErro();
+      }
+    }
+
+    buscarDados();
+    setInterval(buscarDados, 1000);
+  </script>
+</body>
+</html>
