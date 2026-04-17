@@ -1,0 +1,8 @@
+1 - relatorio_planejamento_analitico2025-12-09_16-56-20.csv - exportar através de (Baixar Excel por Planejamento Analítico) pois trás mais informações - Analisar relações formas de pagamento
+2 - aaaa-mm-dd.xlsx - relatorio_balancete (DRE3)
+3- renegociados-com-nf1_2025-12-09_17-23-03.xslx - Verificar os métodos de pagamentos em branco - verificar através de relatórios individuais por valor - (baixar Excel com Nf de títulos) Extrato relatório recebimento - PIX, Deposito e Boleto
+4- relatorio_planejamento_analitico2025-12-09_16-56-20.csv - Extrato relatório Cofre- Aplicação - Cartão (Verificar a relação de formas de pagamento) - Analisar relações formas de pagamento
+5- relatorio_planejamento_analitico2025-12-09_16-56-20.csv - Extrato relatório pagamento
+6 - relatorio_banco.xslx - Extrato relatório saldo banco;
+7- relatorioa_conta.xslx -> relatorioa_conta_banc.xslx -  relatório de contas - Fazer a reação dp id de conta com o nome
+8- relatorio.csv - relatório de contas a pagar
