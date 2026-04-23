@@ -1,0 +1,9 @@
+# Ignore Python cache directories
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Ignore virtual environment directories
+venv/
+.env/
