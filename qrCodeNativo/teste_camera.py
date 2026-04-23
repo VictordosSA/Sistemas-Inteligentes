@@ -1,11 +1,12 @@
 import cv2
-from pyzbar import pyzbar
 from flask import Flask, render_template, jsonify
 import threading
 import time
 import sys
 
 app = Flask(__name__)
+
+detector = cv2.QRCodeDetector()
 
 # Dados globais
 dados_compartilhados = {
@@ -26,19 +27,26 @@ def rodar_camera():
 
     while True:
         ret, frame = cap.read()
-        if not ret: break
+        if not ret:
+            break
 
-        qrcodes = pyzbar.decode(frame)
-        for qrcode in qrcodes:
-            conteudo = qrcode.data.decode('utf-8')
+        data, points, _ = detector.detectAndDecode(frame)
+        if points is not None and data:
             dados_compartilhados = {
-                "conteudo": conteudo,
+                "conteudo": data,
                 "timestamp": time.strftime("%H:%M:%S")
             }
-            print(f"[LEITURA] QR Code: {conteudo}")
+            print(f"[LEITURA] QR Code: {data}")
+
+            points = points.astype(int)
+            for i in range(len(points[0])):
+                pt1 = tuple(points[0][i])
+                pt2 = tuple(points[0][(i + 1) % len(points[0])])
+                cv2.line(frame, pt1, pt2, (0, 255, 0), 2)
 
         cv2.imshow("Preview Camera", frame)
-        if cv2.waitKey(1) & 0xFF == 27: break
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
 
     cap.release()
     cv2.destroyAllWindows()
