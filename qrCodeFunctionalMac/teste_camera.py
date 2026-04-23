@@ -1,5 +1,6 @@
 import cv2
 import sys
+import os
 import time
 import threading
 try:
@@ -21,10 +22,45 @@ except Exception as e:
 
 app = Flask(__name__)
 
+# Configuração opcional de banco de dados MySQL/MariaDB
+try:
+    import mysql.connector
+except ModuleNotFoundError:
+    mysql = None
+    print("[WARN] mysql-connector-python não instalado. Instale com: python3 -m pip install mysql-connector-python")
+
+DB_CONFIG = {
+    "host": os.environ.get("DB_HOST", "127.0.0.1"),
+    "port": int(os.environ.get("DB_PORT", 3306)),
+    "user": os.environ.get("DB_USER", "root"),
+    "password": os.environ.get("DB_PASSWORD", ""),
+    "database": os.environ.get("DB_NAME", "centro_logistica"),
+}
+
+FALLBACK_REGIAO = {
+    "123.456.789-00": "Norte",
+    "234.567.890-11": "Nordeste",
+    "345.678.901-22": "Centro-Oeste",
+    "456.789.012-33": "Sudeste",
+    "567.890.123-44": "Sul",
+    "12.345.678/0001-99": "Centro-Oeste",
+    "Porto Velho": "Norte",
+    "Salvador": "Nordeste",
+    "Cuiabá": "Centro-Oeste",
+    "São Paulo": "Sudeste",
+    "Sao Paulo": "Sudeste",
+    "Curitiba": "Sul",
+    "Batel": "Sul",
+}
+
 # Dados globais
 dados_compartilhados = {
     "conteudo": "Aguardando leitura...",
-    "timestamp": "-"
+    "tipo": "-",
+    "regiao": "-",
+    "timestamp": "-",
+    "status": "aguardando",
+    "informacoes": {}
 }
 dados_lock = threading.Lock()
 
@@ -34,6 +70,152 @@ frame_lock = threading.Lock()
 
 # Instância do detector OpenCV (usada no fallback)
 _cv_detector = cv2.QRCodeDetector()
+
+def conectar_db():
+    if mysql is None:
+        return None
+    try:
+        return mysql.connector.connect(**DB_CONFIG)
+    except Exception as e:
+        print(f"[WARN] Não foi possível conectar ao banco MySQL: {e}")
+        return None
+
+
+def _normalize_text(text):
+    return text.strip().lower() if isinstance(text, str) else ""
+
+
+def buscar_informacoes_por_qrcode(conteudo):
+    """Busca todas as informações disponíveis para um QR Code."""
+    if not conteudo:
+        return {
+            "tipo": "desconhecido",
+            "regiao": None,
+            "informacoes": {}
+        }
+
+    texto = conteudo.strip()
+    conn = conectar_db()
+    
+    # Tenta buscar em Cliente
+    if conn:
+        cursor = None
+        try:
+            cursor = conn.cursor(dictionary=True)
+
+            cursor.execute(
+                """
+                SELECT c.nome_cli, c.cpf_cli, c.email_cli, c.telefone_cli, l.regiao_loc, l.cidade_loc, l.estado_loc, l.bairro_loc, l.cep_loc
+                FROM cliente c
+                JOIN localidade l ON c.id_loc_fk = l.id_loc
+                WHERE c.cpf_cli = %s OR c.email_cli = %s OR c.nome_cli = %s
+                LIMIT 1
+                """,
+                (texto, texto, texto)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "tipo": "Cliente",
+                    "regiao": row.get("regiao_loc"),
+                    "informacoes": {
+                        "nome": row.get("nome_cli"),
+                        "cpf": row.get("cpf_cli"),
+                        "email": row.get("email_cli"),
+                        "telefone": row.get("telefone_cli"),
+                        "cidade": row.get("cidade_loc"),
+                        "estado": row.get("estado_loc"),
+                        "bairro": row.get("bairro_loc"),
+                        "cep": row.get("cep_loc")
+                    }
+                }
+
+            # Tenta buscar em Distribuidora
+            cursor.execute(
+                """
+                SELECT d.nome_dist, d.cnpj_dist, d.email_dist, d.telefone_dist, d.capacidade_dist, l.regiao_loc, l.cidade_loc, l.estado_loc, l.bairro_loc, l.cep_loc
+                FROM distribuidora d
+                JOIN localidade l ON d.id_loc_fk = l.id_loc
+                WHERE d.cnpj_dist = %s OR d.email_dist = %s OR d.nome_dist = %s
+                LIMIT 1
+                """,
+                (texto, texto, texto)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "tipo": "Distribuidora",
+                    "regiao": row.get("regiao_loc"),
+                    "informacoes": {
+                        "nome": row.get("nome_dist"),
+                        "cnpj": row.get("cnpj_dist"),
+                        "email": row.get("email_dist"),
+                        "telefone": row.get("telefone_dist"),
+                        "capacidade": f"{row.get('capacidade_dist', 0):.0f} kg",
+                        "cidade": row.get("cidade_loc"),
+                        "estado": row.get("estado_loc"),
+                        "bairro": row.get("bairro_loc"),
+                        "cep": row.get("cep_loc")
+                    }
+                }
+
+            # Tenta buscar em Localidade
+            cursor.execute(
+                """
+                SELECT regiao_loc, cidade_loc, estado_loc, pais_loc, bairro_loc, cep_loc, numero_loc, complemento_loc, ponto_refer_loc
+                FROM localidade
+                WHERE cep_loc = %s OR cidade_loc = %s OR bairro_loc = %s OR ponto_refer_loc = %s OR complemento_loc = %s
+                LIMIT 1
+                """,
+                (texto, texto, texto, texto, texto)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "tipo": "Localidade",
+                    "regiao": row.get("regiao_loc"),
+                    "informacoes": {
+                        "cidade": row.get("cidade_loc"),
+                        "estado": row.get("estado_loc"),
+                        "bairro": row.get("bairro_loc"),
+                        "cep": row.get("cep_loc"),
+                        "pais": row.get("pais_loc"),
+                        "numero": row.get("numero_loc"),
+                        "complemento": row.get("complemento_loc"),
+                        "ponto_referencia": row.get("ponto_refer_loc")
+                    }
+                }
+
+        except Exception as e:
+            print(f"[WARN] Erro ao buscar informações no banco de dados: {e}")
+        finally:
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    # Fallback com as informações mapeadas localmente
+    chave = _normalize_text(texto)
+    for chave_esperada, regiao in FALLBACK_REGIAO.items():
+        if chave == _normalize_text(chave_esperada):
+            return {
+                "tipo": "Fallback",
+                "regiao": regiao,
+                "informacoes": {
+                    "valor_lido": texto
+                }
+            }
+
+    return {
+        "tipo": "desconhecido",
+        "regiao": None,
+        "informacoes": {}
+    }
 
 def decode_qrcodes(frame):
     decoded = []
@@ -93,12 +275,21 @@ def rodar_camera():
 
         textos = decode_qrcodes(frame)
         for conteudo in textos:
+            info = buscar_informacoes_por_qrcode(conteudo)
             with dados_lock:
                 dados_compartilhados = {
                     "conteudo": conteudo,
-                    "timestamp": time.strftime("%H:%M:%S")
+                    "tipo": info.get("tipo"),
+                    "regiao": info.get("regiao") or "Não encontrada",
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "status": "encontrado" if info.get("regiao") else "não encontrado",
+                    "informacoes": info.get("informacoes", {})
                 }
-            print(f"[LEITURA] QR Code: {conteudo}")
+
+            if info.get("regiao"):
+                print(f"[DB] {info.get('tipo')} encontrado: {conteudo} → {info.get('regiao')}")
+            else:
+                print(f"[DB] QR Code lido, mas valor não está na base: {conteudo}")
 
         time.sleep(0.01)
 
