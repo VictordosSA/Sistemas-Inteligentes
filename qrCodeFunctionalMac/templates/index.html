@@ -286,6 +286,76 @@
   </div>
 
   <div class="main-container">
+    <!-- Seletor de Câmera -->
+    <div class="camera-container">
+      <h2>📷 Selecionar Câmera</h2>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <select id="camera-select" style="padding: 10px; border-radius: 6px; border: 1px solid #ddd; flex: 1; min-width: 200px;">
+          <option value="">Carregando câmeras...</option>
+        </select>
+        <button id="apply-camera-btn" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Aplicar</button>
+      </div>
+      <div id="camera-status" style="margin-top: 10px; padding: 10px; border-radius: 6px; background: #f5f5f5; color: #666; font-size: 13px;">
+        Câmera atual: <strong id="current-camera">-</strong>
+      </div>
+    </div>
+
+    <!-- Ajustes de Câmera -->
+    <div class="camera-container">
+      <h2>⚙️ Ajustes de Câmera</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+        <!-- Brilho -->
+        <div>
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+            ☀️ Brilho: <span id="brightness-value">60</span>
+          </label>
+          <input type="range" id="brightness-slider" min="0" max="100" value="60" style="width: 100%; cursor: pointer;">
+        </div>
+        
+        <!-- Contraste -->
+        <div>
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+            🔲 Contraste: <span id="contrast-value">40</span>
+          </label>
+          <input type="range" id="contrast-slider" min="0" max="100" value="40" style="width: 100%; cursor: pointer;">
+        </div>
+        
+        <!-- Saturação -->
+        <div>
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+            🎨 Saturação: <span id="saturation-value">80</span>
+          </label>
+          <input type="range" id="saturation-slider" min="0" max="100" value="80" style="width: 100%; cursor: pointer;">
+        </div>
+        
+        <!-- Ganho -->
+        <div>
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+            📈 Ganho: <span id="gain-value">50</span>
+          </label>
+          <input type="range" id="gain-slider" min="0" max="100" value="50" style="width: 100%; cursor: pointer;">
+        </div>
+        
+        <!-- Exposição -->
+        <div>
+          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
+            🌅 Exposição: <span id="exposure-value">-5</span>
+          </label>
+          <input type="range" id="exposure-slider" min="-20" max="20" value="-5" style="width: 100%; cursor: pointer;">
+        </div>
+
+        <!-- Auto Exposure Toggle -->
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <label style="font-weight: 600; color: #333;">🤖 Auto Exposição</label>
+          <input type="checkbox" id="auto-exposure-toggle" checked style="width: 20px; height: 20px; cursor: pointer;">
+        </div>
+      </div>
+      
+      <button id="reset-camera-btn" style="margin-top: 15px; padding: 10px 20px; background: #ff9800; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+        🔄 Restaurar Padrões
+      </button>
+    </div>
+
     <!-- Câmera -->
     <div class="camera-container">
       <h2>📷 Preview da Câmera</h2>
@@ -330,6 +400,176 @@
   </div>
 
   <script>
+    // Carregar lista de câmeras
+    async function carregarCameras() {
+      try {
+        const res = await fetch('/cameras');
+        if (!res.ok) throw new Error('Erro ao carregar câmeras');
+        
+        const data = await res.json();
+        const select = document.getElementById('camera-select');
+        const currentCamera = document.getElementById('current-camera');
+        
+        // Limpar opções anteriores
+        select.innerHTML = '';
+        
+        if (data.cameras.length === 0) {
+          select.innerHTML = '<option value="">Nenhuma câmera disponível</option>';
+          return;
+        }
+        
+        // Adicionar câmeras disponíveis
+        data.cameras.forEach(cam => {
+          const option = document.createElement('option');
+          option.value = cam.indice;
+          option.textContent = cam.nome;
+          select.appendChild(option);
+        });
+        
+        // Definir câmera atual como selecionada
+        select.value = data.camera_atual;
+        currentCamera.textContent = `Câmera ${data.camera_atual}`;
+        
+      } catch (e) {
+        console.error('Erro ao carregar câmeras:', e);
+        document.getElementById('camera-select').innerHTML = '<option value="">Erro ao carregar câmeras</option>';
+      }
+    }
+    
+    // Mudar câmera
+    async function mudarCamera() {
+      const select = document.getElementById('camera-select');
+      const index = parseInt(select.value);
+      
+      if (isNaN(index)) {
+        alert('Selecione uma câmera válida');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`/set_camera/${index}`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.sucesso) {
+          document.getElementById('current-camera').textContent = `Câmera ${index}`;
+          alert(`Câmera mudada para ${data.mensagem}`);
+        } else {
+          alert(`Erro: ${data.mensagem}`);
+        }
+      } catch (e) {
+        console.error('Erro ao mudar câmera:', e);
+        alert('Erro ao mudar câmera');
+      }
+    }
+    
+    // Carregar câmeras ao iniciar
+    carregarCameras();
+    
+    // Recarregar câmeras a cada 3 segundos
+    setInterval(carregarCameras, 3000);
+    
+    // Event listener para botão
+    document.getElementById('apply-camera-btn').addEventListener('click', mudarCamera);
+    
+    // Permitir mudança com Enter no select
+    document.getElementById('camera-select').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') mudarCamera();
+    });
+
+    // Carregar e aplicar ajustes de câmera
+    async function carregarConfiguracoesCamera() {
+      try {
+        const res = await fetch('/camera_settings');
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        document.getElementById('brightness-slider').value = data.brightness;
+        document.getElementById('brightness-value').textContent = data.brightness;
+        document.getElementById('contrast-slider').value = data.contrast;
+        document.getElementById('contrast-value').textContent = data.contrast;
+        document.getElementById('saturation-slider').value = data.saturation;
+        document.getElementById('saturation-value').textContent = data.saturation;
+        document.getElementById('gain-slider').value = data.gain;
+        document.getElementById('gain-value').textContent = data.gain;
+        document.getElementById('exposure-slider').value = data.exposure;
+        document.getElementById('exposure-value').textContent = data.exposure;
+        document.getElementById('auto-exposure-toggle').checked = data.auto_exposure;
+      } catch (e) {
+        console.warn('Erro ao carregar configurações de câmera:', e);
+      }
+    }
+
+    async function salvarConfiguracoesCamera() {
+      const settings = {
+        brightness: parseInt(document.getElementById('brightness-slider').value),
+        contrast: parseInt(document.getElementById('contrast-slider').value),
+        saturation: parseInt(document.getElementById('saturation-slider').value),
+        gain: parseInt(document.getElementById('gain-slider').value),
+        exposure: parseInt(document.getElementById('exposure-slider').value),
+        auto_exposure: document.getElementById('auto-exposure-toggle').checked
+      };
+      
+      try {
+        const res = await fetch('/camera_settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+        
+        if (res.ok) {
+          console.log('Configurações salvas com sucesso');
+        }
+      } catch (e) {
+        console.error('Erro ao salvar configurações:', e);
+      }
+    }
+
+    // Event listeners para sliders
+    ['brightness', 'contrast', 'saturation', 'gain', 'exposure'].forEach(setting => {
+      const slider = document.getElementById(`${setting}-slider`);
+      const valueDisplay = document.getElementById(`${setting}-value`);
+      
+      slider.addEventListener('input', (e) => {
+        valueDisplay.textContent = e.target.value;
+        salvarConfiguracoesCamera();
+      });
+    });
+
+    // Event listener para auto exposure
+    document.getElementById('auto-exposure-toggle').addEventListener('change', () => {
+      salvarConfiguracoesCamera();
+    });
+
+    // Botão reset
+    document.getElementById('reset-camera-btn').addEventListener('click', async () => {
+      const defaults = {
+        brightness: 60,
+        contrast: 40,
+        saturation: 80,
+        gain: 50,
+        exposure: -5,
+        auto_exposure: true
+      };
+      
+      try {
+        const res = await fetch('/camera_settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(defaults)
+        });
+        
+        if (res.ok) {
+          carregarConfiguracoesCamera();
+          alert('Configurações restauradas aos padrões');
+        }
+      } catch (e) {
+        console.error('Erro ao restaurar configurações:', e);
+      }
+    });
+
+    // Carregar configurações ao iniciar
+    carregarConfiguracoesCamera();
+
     function formatarInfo(info) {
       if (!info || Object.keys(info).length === 0) {
         return '<div style="color: #999; text-align: center; padding: 20px;">Nenhuma informação disponível</div>';
