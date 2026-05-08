@@ -4,6 +4,15 @@ import os
 import time
 import threading
 try:
+    import serial
+    import serial.tools.list_ports
+    arduino_connected = True
+except ImportError:
+    arduino_connected = False
+    print("[WARN] pyserial não instalado. Instale com: pip install pyserial")
+    print("Comunicação com Arduino será desabilitada.")
+
+try:
     from flask import Flask, render_template, jsonify, Response, request
 except ModuleNotFoundError as e:
     print("[ERRO] Módulo Flask não instalado:", e)
@@ -72,6 +81,23 @@ frame_lock = threading.Lock()
 camera_index = int(os.environ.get("CAMERA_INDEX", 0))
 camera_lock = threading.Lock()
 camera_thread_running = True
+
+# Configuração do Arduino
+arduino_port = os.environ.get("ARDUINO_PORT", "COM3")  # Windows padrão
+arduino_baudrate = 9600
+arduino_serial = None
+arduino_lock = threading.Lock()
+last_servo_regiao = None
+
+# Mapeamento de regiões para comandos dos servos
+REGIAO_COMANDOS = {
+    "Norte": "SERVO1:90,SERVO2:45",      # Servo 1 para 90°, Servo 2 para 45°
+    "Nordeste": "SERVO1:135,SERVO2:90",  # Servo 1 para 135°, Servo 2 para 90°
+    "Centro-Oeste": "SERVO1:45,SERVO2:135", # Servo 1 para 45°, Servo 2 para 135°
+    "Sudeste": "SERVO1:0,SERVO2:180",    # Servo 1 para 0°, Servo 2 para 180°
+    "Sul": "SERVO1:180,SERVO2:0",        # Servo 1 para 180°, Servo 2 para 0°
+    "Não encontrada": "SERVO1:90,SERVO2:90"  # Posição neutra
+}
 
 # Instância do detector OpenCV (usada no fallback)
 _cv_detector = cv2.QRCodeDetector()
@@ -151,6 +177,109 @@ def listar_cameras_disponiveis():
         print(f"[INFO] Total de câmeras encontradas: {len(cameras)}")
     
     return cameras
+
+# Funções para controle do Arduino
+def conectar_arduino():
+    """Conecta ao Arduino via porta serial."""
+    global arduino_serial
+    
+    if not arduino_connected:
+        print("[WARN] pyserial não disponível. Comunicação com Arduino desabilitada.")
+        return False
+    
+    try:
+        with arduino_lock:
+            if arduino_serial is not None and arduino_serial.is_open:
+                return True
+            
+            # Tentar conectar na porta especificada
+            arduino_serial = serial.Serial(arduino_port, arduino_baudrate, timeout=1)
+            time.sleep(2)  # Aguardar inicialização
+            
+            if arduino_serial.is_open:
+                print(f"[OK] Arduino conectado na porta {arduino_port}")
+                return True
+            else:
+                print(f"[ERRO] Falha ao abrir porta {arduino_port}")
+                return False
+                
+    except Exception as e:
+        print(f"[ERRO] Falha ao conectar Arduino: {str(e)[:100]}")
+        arduino_serial = None
+        return False
+
+def desconectar_arduino():
+    """Desconecta do Arduino."""
+    global arduino_serial
+    
+    try:
+        with arduino_lock:
+            if arduino_serial and arduino_serial.is_open:
+                arduino_serial.close()
+                arduino_serial = None
+                print("[OK] Arduino desconectado")
+    except Exception as e:
+        print(f"[WARN] Erro ao desconectar Arduino: {str(e)[:50]}")
+
+def enviar_comando_arduino(comando):
+    """Envia comando para o Arduino."""
+    global arduino_serial
+    
+    if not arduino_connected or arduino_serial is None:
+        return False
+    
+    try:
+        with arduino_lock:
+            if arduino_serial and arduino_serial.is_open:
+                # Adicionar newline para indicar fim do comando
+                comando_completo = f"{comando}\n"
+                arduino_serial.write(comando_completo.encode('utf-8'))
+                arduino_serial.flush()
+                
+                # Aguardar resposta (opcional)
+                time.sleep(0.1)
+                
+                print(f"[ARDUINO] Comando enviado: {comando}")
+                return True
+            else:
+                print("[WARN] Arduino não conectado")
+                return False
+                
+    except Exception as e:
+        print(f"[ERRO] Falha ao enviar comando para Arduino: {str(e)[:100]}")
+        # Tentar reconectar
+        desconectar_arduino()
+        conectar_arduino()
+        return False
+
+def controlar_servo_por_regiao(regiao):
+    """Controla os servos baseado na região detectada."""
+    global last_servo_regiao
+
+    regiao_normalizada = _normalize_regiao(regiao)
+    comando = None
+
+    for chave, valor in REGIAO_COMANDOS.items():
+        if _normalize_regiao(chave) == regiao_normalizada:
+            comando = valor
+            regiao = chave
+            break
+
+    if comando is None:
+        comando = REGIAO_COMANDOS.get("Não encontrada")
+        print(f"[SERVO] Região '{regiao}' não mapeada, usando posição neutra")
+        regiao = "Não encontrada"
+
+    if regiao == last_servo_regiao:
+        return True
+
+    sucesso = enviar_comando_arduino(comando)
+    if sucesso:
+        last_servo_regiao = regiao
+        print(f"[SERVO] Comando enviado para região '{regiao}': {comando}")
+    else:
+        print(f"[SERVO] Falha ao enviar comando para região '{regiao}'")
+    return sucesso
 
 def conectar_db():
     if mysql is None:
@@ -297,6 +426,24 @@ def buscar_informacoes_por_qrcode(conteudo):
         "regiao": None,
         "informacoes": {}
     }
+
+
+def _normalize_regiao(regiao):
+    if not isinstance(regiao, str):
+        return ""
+    texto = regiao.strip().lower()
+    # Remover acentos básicos para comparação
+    substituicoes = {
+        'á': 'a', 'à': 'a', 'ã': 'a', 'â': 'a',
+        'é': 'e', 'ê': 'e',
+        'í': 'i',
+        'ó': 'o', 'ô': 'o', 'õ': 'o',
+        'ú': 'u',
+        'ç': 'c'
+    }
+    for origem, destino in substituicoes.items():
+        texto = texto.replace(origem, destino)
+    return texto
 
 def processar_frame(frame):
     """Melhora a qualidade do frame para câmeras escuras."""
@@ -539,20 +686,26 @@ def rodar_camera():
             textos = decode_qrcodes(frame)
             for conteudo in textos:
                 info = buscar_informacoes_por_qrcode(conteudo)
+                regiao_detectada = info.get("regiao") or "Não encontrada"
+                
                 with dados_lock:
                     dados_compartilhados = {
                         "conteudo": conteudo,
                         "tipo": info.get("tipo"),
-                        "regiao": info.get("regiao") or "Não encontrada",
+                        "regiao": regiao_detectada,
                         "timestamp": time.strftime("%H:%M:%S"),
                         "status": "encontrado" if info.get("regiao") else "não encontrado",
                         "informacoes": info.get("informacoes", {})
                     }
 
                 if info.get("regiao"):
-                    print(f"[DB] {info.get('tipo')} encontrado: {conteudo} → {info.get('regiao')}")
+                    print(f"[DB] {info.get('tipo')} encontrado: {conteudo} → {regiao_detectada}")
+                    # Controlar servos baseado na região detectada
+                    controlar_servo_por_regiao(regiao_detectada)
                 else:
                     print(f"[DB] QR Code lido, mas valor não está na base: {conteudo}")
+                    # Enviar comando neutro para região não encontrada
+                    controlar_servo_por_regiao("Não encontrada")
 
             time.sleep(0.01)
         
@@ -655,6 +808,37 @@ def video_feed():
             time.sleep(0.03)
     return Response(gen(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/arduino_status')
+def arduino_status():
+    """Retorna status da conexão com Arduino."""
+    global arduino_serial
+    
+    status = {
+        "conectado": arduino_serial is not None and arduino_serial.is_open if arduino_serial else False,
+        "porta": arduino_port,
+        "baudrate": arduino_baudrate,
+        "pyserial_disponivel": arduino_connected,
+        "mapeamento_regioes": REGIAO_COMANDOS
+    }
+    return jsonify(status)
+
+@app.route('/testar_servo/<regiao>', methods=['POST'])
+def testar_servo(regiao):
+    """Testa o controle de servo para uma região específica."""
+    if regiao not in REGIAO_COMANDOS:
+        return jsonify({
+            "sucesso": False,
+            "mensagem": f"Região '{regiao}' não encontrada",
+            "regioes_disponiveis": list(REGIAO_COMANDOS.keys())
+        }), 400
+    
+    sucesso = controlar_servo_por_regiao(regiao)
+    return jsonify({
+        "sucesso": sucesso,
+        "mensagem": f"Comando enviado para região '{regiao}'",
+        "comando": REGIAO_COMANDOS[regiao]
+    })
+
 @app.route('/dados')
 def enviar_dados():
     with dados_lock:
@@ -666,12 +850,26 @@ if __name__ == "__main__":
     if sys.platform == "darwin":
         print("[NOTICE] macOS detectado. Se usar pyzbar, instale zbar: brew install zbar")
 
+    # Tentar conectar ao Arduino
+    if arduino_connected:
+        print("[INFO] Tentando conectar ao Arduino...")
+        if conectar_arduino():
+            print("[OK] Arduino conectado com sucesso!")
+        else:
+            print("[WARN] Arduino não conectado. Verifique a porta serial.")
+    else:
+        print("[WARN] pyserial não instalado. Funcionalidade Arduino desabilitada.")
+
     # Inicia a thread da câmera
     camera_thread = threading.Thread(target=rodar_camera, daemon=True)
     camera_thread.start()
 
     print("[INFO] Servidor Web iniciando em http://127.0.0.1:5000")
-    app.run(host='127.0.0.1', port=5000, debug=False, threaded=True, use_reloader=False)
+    try:
+        app.run(host='127.0.0.1', port=5000, debug=False, threaded=True, use_reloader=False)
+    finally:
+        # Desconectar Arduino ao sair
+        desconectar_arduino()
 
 # Para instalação de dependências (executar no terminal, fora do Python):
 # /usr/local/bin/python3 -m pip install --upgrade pip setuptools wheel

@@ -356,6 +356,39 @@
       </button>
     </div>
 
+    <!-- Controle do Arduino -->
+    <div class="camera-container">
+      <h2>🤖 Controle dos Servos (Arduino)</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <!-- Status do Arduino -->
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef;">
+          <h3 style="margin: 0 0 10px 0; color: #495057; font-size: 14px;">📡 Status Arduino</h3>
+          <div id="arduino-status" style="font-size: 13px; color: #6c757d;">
+            Carregando...
+          </div>
+        </div>
+
+        <!-- Teste Manual dos Servos -->
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef;">
+          <h3 style="margin: 0 0 10px 0; color: #495057; font-size: 14px;">🧪 Teste Manual</h3>
+          <select id="regiao-teste" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ced4da; margin-bottom: 10px;">
+            <option value="">Selecione uma região...</option>
+          </select>
+          <button id="testar-servo-btn" style="width: 100%; padding: 8px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
+            🚀 Testar Servo
+          </button>
+        </div>
+
+        <!-- Último Comando -->
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef;">
+          <h3 style="margin: 0 0 10px 0; color: #495057; font-size: 14px;">📤 Último Comando</h3>
+          <div id="ultimo-comando" style="font-size: 12px; color: #6c757d; font-family: monospace;">
+            Nenhum comando enviado
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Câmera -->
     <div class="camera-container">
       <h2>📷 Preview da Câmera</h2>
@@ -636,6 +669,77 @@
     }
     
     pollDados();
+
+    // Funções do Arduino
+    async function carregarStatusArduino() {
+      try {
+        const res = await fetch('/arduino_status');
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const statusDiv = document.getElementById('arduino-status');
+
+        let statusHtml = '';
+        if (data.conectado) {
+          statusHtml = `<span style="color: #28a745;">● Conectado</span><br>`;
+        } else {
+          statusHtml = `<span style="color: #dc3545;">● Desconectado</span><br>`;
+        }
+
+        statusHtml += `Porta: ${data.porta}<br>`;
+        statusHtml += `Baudrate: ${data.baudrate}<br>`;
+        statusHtml += `PySerial: ${data.pyserial_disponivel ? '✅' : '❌'}`;
+
+        statusDiv.innerHTML = statusHtml;
+
+        // Preencher select de teste
+        const selectRegiao = document.getElementById('regiao-teste');
+        selectRegiao.innerHTML = '<option value="">Selecione uma região...</option>';
+
+        for (const [regiao, comando] of Object.entries(data.mapeamento_regioes)) {
+          const option = document.createElement('option');
+          option.value = regiao;
+          option.textContent = `${regiao} (${comando})`;
+          selectRegiao.appendChild(option);
+        }
+
+      } catch (e) {
+        console.warn('Erro ao carregar status Arduino:', e);
+        document.getElementById('arduino-status').innerHTML = '<span style="color: #dc3545;">Erro ao carregar</span>';
+      }
+    }
+
+    async function testarServo() {
+      const regiao = document.getElementById('regiao-teste').value;
+      if (!regiao) {
+        alert('Selecione uma região para testar');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/testar_servo/${regiao}`, { method: 'POST' });
+        const data = await res.json();
+
+        if (data.sucesso) {
+          document.getElementById('ultimo-comando').textContent = `${new Date().toLocaleTimeString()}: ${data.comando}`;
+          alert(`✅ Comando enviado: ${data.mensagem}`);
+        } else {
+          alert(`❌ Erro: ${data.mensagem}`);
+        }
+      } catch (e) {
+        console.error('Erro ao testar servo:', e);
+        alert('Erro ao testar servo');
+      }
+    }
+
+    // Carregar status do Arduino ao iniciar
+    carregarStatusArduino();
+
+    // Recarregar status a cada 10 segundos
+    setInterval(carregarStatusArduino, 10000);
+
+    // Event listener para botão de teste
+    document.getElementById('testar-servo-btn').addEventListener('click', testarServo);
   </script>
 </body>
 </html>
