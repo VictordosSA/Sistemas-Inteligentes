@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Leitor de QR Code - Sistema de Rastreamento</title>
+
   <style>
     * {
       margin: 0;
@@ -11,8 +13,14 @@
       box-sizing: border-box;
     }
 
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+        Ubuntu, Cantarell, sans-serif;
+
       background: #f5f7fa;
       min-height: 100vh;
       display: flex;
@@ -39,170 +47,148 @@
 
     .main-container {
       flex: 1;
-      display: flex;
-      flex-direction: column;
       max-width: 1400px;
       width: 100%;
       margin: 0 auto;
       padding: 30px 20px;
-      gap: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
     }
 
-    /* Seção da câmera */
-    .camera-container {
+    .camera-container,
+    .info-card {
       background: white;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-      overflow: hidden;
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+      transition: all 0.25s ease;
+    }
+
+    .camera-container:hover,
+    .info-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
     }
 
     .camera-container h2 {
       color: #333;
       font-size: 18px;
       margin-bottom: 15px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    }
+
+    .dashboard-layout {
+      display: grid;
+      grid-template-columns: 1.6fr 0.9fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .camera-frame {
+      position: relative;
+      width: 100%;
+      height: 760px;
+      background: #000;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.18);
     }
 
     #video {
       width: 100%;
-      max-height: 500px;
+      height: 100%;
+      object-fit: cover;
       display: block;
       background: #000;
-      border-radius: 8px;
-      object-fit: cover;
     }
 
-    /* Seção de informações */
-    .info-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
+    .live-badge {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+
+      background: rgba(0, 0, 0, 0.72);
+      color: white;
+
+      padding: 10px 16px;
+      border-radius: 999px;
+
+      font-size: 12px;
+      font-weight: 700;
+
+      backdrop-filter: blur(6px);
+      letter-spacing: 0.5px;
+    }
+
+    .info-side {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
     }
 
     .info-card {
-      background: white;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-      border-left: 4px solid #667eea;
+      border-left: 5px solid #667eea;
     }
 
-    .info-card.primary {
-      grid-column: span 1;
-      border-left-color: #667eea;
+    .info-card.highlight {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
     }
 
     .info-card.success {
       border-left-color: #4caf50;
     }
 
-    .info-card.highlight {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border-left-color: #764ba2;
-    }
-
-    .info-card.details {
-      grid-column: span 1;
-    }
-
-    @media (min-width: 1200px) {
-      .info-card.details {
-        grid-column: span 2;
-      }
-    }
-
     .card-title {
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .info-card:not(.highlight) .card-title {
-      color: #667eea;
-    }
-
-    .info-card.highlight .card-title {
-      color: rgba(255, 255, 255, 0.9);
+      letter-spacing: 1px;
+      margin-bottom: 18px;
     }
 
     .card-value {
-      font-size: 22px;
-      font-weight: 600;
+      font-size: 36px;
+      font-weight: 700;
+      line-height: 1.2;
       word-break: break-word;
-      line-height: 1.4;
-      min-height: 40px;
-      display: flex;
-      align-items: center;
-    }
-
-    .info-card:not(.highlight) .card-value {
-      color: #333;
-    }
-
-    .info-card.highlight .card-value {
-      color: white;
-      font-size: 28px;
     }
 
     .card-subtitle {
-      font-size: 13px;
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid #eee;
-    }
-
-    .info-card.highlight .card-subtitle {
-      border-top-color: rgba(255, 255, 255, 0.2);
-    }
-
-    .info-card:not(.highlight) .card-subtitle {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
       color: #999;
-    }
-
-    .info-card.highlight .card-subtitle {
-      color: rgba(255, 255, 255, 0.8);
     }
 
     .info-row {
       display: flex;
       justify-content: space-between;
-      padding: 10px 0;
+      padding: 12px 0;
       border-bottom: 1px solid #f0f0f0;
-      font-size: 13px;
-    }
-
-    .info-row:last-child {
-      border-bottom: none;
     }
 
     .info-row label {
-      color: #999;
-      font-weight: 500;
+      color: #777;
+      font-weight: 600;
     }
 
-    .info-row value {
+    .info-row .value {
       color: #333;
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .status-badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 12px;
-      border-radius: 20px;
-      font-size: 12px;
+
+      padding: 10px 14px;
+      border-radius: 999px;
+
+      font-size: 13px;
       font-weight: 600;
-      margin-top: 10px;
+
+      margin-top: 15px;
     }
 
     .status-badge.found {
@@ -227,21 +213,49 @@
       animation: pulse 2s infinite;
     }
 
-    .status-badge.found .status-indicator {
+    .found .status-indicator {
       background: #4caf50;
     }
 
-    .status-badge.not-found .status-indicator {
+    .not-found .status-indicator {
       background: #ff9800;
     }
 
-    .status-badge.waiting .status-indicator {
+    .waiting .status-indicator {
       background: #999;
     }
 
     @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
+      0%, 100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.6;
+      }
+    }
+
+    select,
+    button,
+    input[type="range"] {
+      transition: all 0.2s ease;
+    }
+
+    select:focus,
+    button:focus,
+    input:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+    }
+
+    button:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      cursor: pointer;
     }
 
     .footer {
@@ -254,388 +268,255 @@
       margin-top: auto;
     }
 
-    /* Responsivo */
-    @media (max-width: 768px) {
-      .main-container {
-        padding: 20px 15px;
-        gap: 20px;
-      }
-
-      .header h1 {
-        font-size: 22px;
-      }
-
-      .info-grid {
+    @media (max-width: 1200px) {
+      .dashboard-layout {
         grid-template-columns: 1fr;
       }
 
-      .info-card.details {
-        grid-column: span 1;
+      .camera-frame {
+        height: 520px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .camera-frame {
+        height: 360px;
       }
 
-      #video {
-        max-height: 350px;
+      .card-value {
+        font-size: 28px;
+      }
+
+      .main-container {
+        padding: 20px 15px;
       }
     }
   </style>
 </head>
+
 <body>
+
   <div class="header">
     <h1>📱 Leitor de QR Code</h1>
     <p>Sistema de Rastreamento e Busca de Região</p>
   </div>
 
   <div class="main-container">
-    <!-- Seletor de Câmera -->
+
+    <!-- SELETOR -->
     <div class="camera-container">
       <h2>📷 Selecionar Câmera</h2>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <select id="camera-select" style="padding: 10px; border-radius: 6px; border: 1px solid #ddd; flex: 1; min-width: 200px;">
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <select id="camera-select"
+          style="padding:10px; border-radius:8px; border:1px solid #ddd; flex:1; min-width:200px;">
           <option value="">Carregando câmeras...</option>
         </select>
-        <button id="apply-camera-btn" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Aplicar</button>
+
+        <button id="apply-camera-btn"
+          style="padding:10px 20px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
+          Aplicar
+        </button>
       </div>
-      <div id="camera-status" style="margin-top: 10px; padding: 10px; border-radius: 6px; background: #f5f5f5; color: #666; font-size: 13px;">
-        Câmera atual: <strong id="current-camera">-</strong>
+
+      <div id="camera-status"
+        style="margin-top:10px; padding:10px; border-radius:8px; background:#f5f5f5; color:#666; font-size:13px;">
+        Câmera atual:
+        <strong id="current-camera">-</strong>
       </div>
     </div>
 
-    <!-- Ajustes de Câmera -->
+    <!-- AJUSTES -->
     <div class="camera-container">
       <h2>⚙️ Ajustes de Câmera</h2>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
-        <!-- Brilho -->
+
+      <div
+        style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:20px;">
+
         <div>
-          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-            ☀️ Brilho: <span id="brightness-value">60</span>
+          <label>☀️ Brilho:
+            <span id="brightness-value">60</span>
           </label>
-          <input type="range" id="brightness-slider" min="0" max="100" value="60" style="width: 100%; cursor: pointer;">
-        </div>
-        
-        <!-- Contraste -->
-        <div>
-          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-            🔲 Contraste: <span id="contrast-value">40</span>
-          </label>
-          <input type="range" id="contrast-slider" min="0" max="100" value="40" style="width: 100%; cursor: pointer;">
-        </div>
-        
-        <!-- Saturação -->
-        <div>
-          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-            🎨 Saturação: <span id="saturation-value">80</span>
-          </label>
-          <input type="range" id="saturation-slider" min="0" max="100" value="80" style="width: 100%; cursor: pointer;">
-        </div>
-        
-        <!-- Ganho -->
-        <div>
-          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-            📈 Ganho: <span id="gain-value">50</span>
-          </label>
-          <input type="range" id="gain-slider" min="0" max="100" value="50" style="width: 100%; cursor: pointer;">
-        </div>
-        
-        <!-- Exposição -->
-        <div>
-          <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">
-            🌅 Exposição: <span id="exposure-value">-5</span>
-          </label>
-          <input type="range" id="exposure-slider" min="-20" max="20" value="-5" style="width: 100%; cursor: pointer;">
+
+          <input type="range" id="brightness-slider" min="0" max="100" value="60">
         </div>
 
-        <!-- Auto Exposure Toggle -->
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <label style="font-weight: 600; color: #333;">🤖 Auto Exposição</label>
-          <input type="checkbox" id="auto-exposure-toggle" checked style="width: 20px; height: 20px; cursor: pointer;">
+        <div>
+          <label>🔲 Contraste:
+            <span id="contrast-value">40</span>
+          </label>
+
+          <input type="range" id="contrast-slider" min="0" max="100" value="40">
+        </div>
+
+        <div>
+          <label>🎨 Saturação:
+            <span id="saturation-value">80</span>
+          </label>
+
+          <input type="range" id="saturation-slider" min="0" max="100" value="80">
+        </div>
+
+        <div>
+          <label>📈 Ganho:
+            <span id="gain-value">50</span>
+          </label>
+
+          <input type="range" id="gain-slider" min="0" max="100" value="50">
+        </div>
+
+        <div>
+          <label>🌅 Exposição:
+            <span id="exposure-value">-5</span>
+          </label>
+
+          <input type="range" id="exposure-slider" min="-20" max="20" value="-5">
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px;">
+          <label>🤖 Auto Exposição</label>
+
+          <input type="checkbox" id="auto-exposure-toggle" checked>
         </div>
       </div>
-      
-      <button id="reset-camera-btn" style="margin-top: 15px; padding: 10px 20px; background: #ff9800; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">
+
+      <button id="reset-camera-btn"
+        style="margin-top:15px; padding:10px 20px; background:#ff9800; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
         🔄 Restaurar Padrões
       </button>
     </div>
 
-    <!-- Câmera -->
-    <div class="camera-container">
-      <h2>📷 Preview da Câmera</h2>
-      <img id="video" src="/video_feed" alt="video feed" />
-    </div>
+    <!-- DASHBOARD -->
+    <div class="dashboard-layout">
 
-    <!-- Grid de Informações -->
-    <div class="info-grid">
-      <!-- QR Code Lido -->
-      <div class="info-card primary">
-        <div class="card-title">🔍 QR Code Lido</div>
-        <div class="card-value" id="qr-content">Aguardando...</div>
-        <div class="card-subtitle" id="qr-time">-</div>
+      <!-- CAMERA -->
+      <div class="camera-view">
+
+        <div class="camera-frame">
+
+          <img id="video" src="/video_feed" alt="video feed">
+
+          <div class="live-badge">
+            🔴 AO VIVO
+          </div>
+
+        </div>
+
       </div>
 
-      <!-- Região -->
-      <div class="info-card highlight">
-        <div class="card-title">📍 Região</div>
-        <div class="card-value" id="regiao">Aguardando...</div>
-      </div>
+      <!-- LATERAL -->
+      <div class="info-side">
 
-      <!-- Tipo de Dado -->
-      <div class="info-card success">
-        <div class="card-title">📊 Tipo de Dado</div>
-        <div class="card-value" id="tipo-dado">-</div>
-      </div>
+        <div class="info-card">
+          <div class="card-title">🔍 QR CODE LIDO</div>
 
-      <!-- Informações Detalhadas -->
-      <div class="info-card details">
-        <div class="card-title">ℹ️ Informações Detalhadas</div>
-        <div id="info-details">
-          <div style="color: #999; text-align: center; padding: 20px;">
-            Nenhum dado lido ainda
+          <div class="card-value" id="qr-content">
+            Aguardando...
+          </div>
+
+          <div class="card-subtitle" id="qr-time">
+            -
           </div>
         </div>
+
+        <div class="info-card highlight">
+          <div class="card-title">📍 REGIÃO</div>
+
+          <div class="card-value" id="regiao">
+            Aguardando...
+          </div>
+        </div>
+
+        <div class="info-card success">
+          <div class="card-title">📊 TIPO DE DADO</div>
+
+          <div class="card-value" id="tipo-dado">
+            -
+          </div>
+        </div>
+
+        <div class="info-card">
+          <div class="card-title">
+            ℹ️ INFORMAÇÕES DETALHADAS
+          </div>
+
+          <div id="info-details">
+            <div style="color:#999;text-align:center;padding:20px;">
+              Nenhum dado lido ainda
+            </div>
+          </div>
+        </div>
+
       </div>
+
     </div>
+
   </div>
 
   <div class="footer">
-    <p>Sistema de Leitura de QR Code com Busca em Banco de Dados | Atualização em tempo real</p>
+    Sistema de Leitura de QR Code com Busca em Banco de Dados
   </div>
 
-  <script>
-    // Carregar lista de câmeras
-    async function carregarCameras() {
-      try {
-        const res = await fetch('/cameras');
-        if (!res.ok) throw new Error('Erro ao carregar câmeras');
-        
-        const data = await res.json();
-        const select = document.getElementById('camera-select');
-        const currentCamera = document.getElementById('current-camera');
-        
-        // Limpar opções anteriores
-        select.innerHTML = '';
-        
-        if (data.cameras.length === 0) {
-          select.innerHTML = '<option value="">Nenhuma câmera disponível</option>';
-          return;
-        }
-        
-        // Adicionar câmeras disponíveis
-        data.cameras.forEach(cam => {
-          const option = document.createElement('option');
-          option.value = cam.indice;
-          option.textContent = cam.nome;
-          select.appendChild(option);
-        });
-        
-        // Definir câmera atual como selecionada
-        select.value = data.camera_atual;
-        currentCamera.textContent = `Câmera ${data.camera_atual}`;
-        
-      } catch (e) {
-        console.error('Erro ao carregar câmeras:', e);
-        document.getElementById('camera-select').innerHTML = '<option value="">Erro ao carregar câmeras</option>';
-      }
-    }
-    
-    // Mudar câmera
-    async function mudarCamera() {
-      const select = document.getElementById('camera-select');
-      const index = parseInt(select.value);
-      
-      if (isNaN(index)) {
-        alert('Selecione uma câmera válida');
-        return;
-      }
-      
-      try {
-        const res = await fetch(`/set_camera/${index}`, { method: 'POST' });
-        const data = await res.json();
-        
-        if (data.sucesso) {
-          document.getElementById('current-camera').textContent = `Câmera ${index}`;
-          alert(`Câmera mudada para ${data.mensagem}`);
-        } else {
-          alert(`Erro: ${data.mensagem}`);
-        }
-      } catch (e) {
-        console.error('Erro ao mudar câmera:', e);
-        alert('Erro ao mudar câmera');
-      }
-    }
-    
-    // Carregar câmeras ao iniciar
-    carregarCameras();
-    
-    // Recarregar câmeras a cada 3 segundos
-    setInterval(carregarCameras, 3000);
-    
-    // Event listener para botão
-    document.getElementById('apply-camera-btn').addEventListener('click', mudarCamera);
-    
-    // Permitir mudança com Enter no select
-    document.getElementById('camera-select').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') mudarCamera();
-    });
-
-    // Carregar e aplicar ajustes de câmera
-    async function carregarConfiguracoesCamera() {
-      try {
-        const res = await fetch('/camera_settings');
-        if (!res.ok) return;
-        
-        const data = await res.json();
-        document.getElementById('brightness-slider').value = data.brightness;
-        document.getElementById('brightness-value').textContent = data.brightness;
-        document.getElementById('contrast-slider').value = data.contrast;
-        document.getElementById('contrast-value').textContent = data.contrast;
-        document.getElementById('saturation-slider').value = data.saturation;
-        document.getElementById('saturation-value').textContent = data.saturation;
-        document.getElementById('gain-slider').value = data.gain;
-        document.getElementById('gain-value').textContent = data.gain;
-        document.getElementById('exposure-slider').value = data.exposure;
-        document.getElementById('exposure-value').textContent = data.exposure;
-        document.getElementById('auto-exposure-toggle').checked = data.auto_exposure;
-      } catch (e) {
-        console.warn('Erro ao carregar configurações de câmera:', e);
-      }
-    }
-
-    async function salvarConfiguracoesCamera() {
-      const settings = {
-        brightness: parseInt(document.getElementById('brightness-slider').value),
-        contrast: parseInt(document.getElementById('contrast-slider').value),
-        saturation: parseInt(document.getElementById('saturation-slider').value),
-        gain: parseInt(document.getElementById('gain-slider').value),
-        exposure: parseInt(document.getElementById('exposure-slider').value),
-        auto_exposure: document.getElementById('auto-exposure-toggle').checked
-      };
-      
-      try {
-        const res = await fetch('/camera_settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settings)
-        });
-        
-        if (res.ok) {
-          console.log('Configurações salvas com sucesso');
-        }
-      } catch (e) {
-        console.error('Erro ao salvar configurações:', e);
-      }
-    }
-
-    // Event listeners para sliders
-    ['brightness', 'contrast', 'saturation', 'gain', 'exposure'].forEach(setting => {
-      const slider = document.getElementById(`${setting}-slider`);
-      const valueDisplay = document.getElementById(`${setting}-value`);
-      
-      slider.addEventListener('input', (e) => {
-        valueDisplay.textContent = e.target.value;
-        salvarConfiguracoesCamera();
-      });
-    });
-
-    // Event listener para auto exposure
-    document.getElementById('auto-exposure-toggle').addEventListener('change', () => {
-      salvarConfiguracoesCamera();
-    });
-
-    // Botão reset
-    document.getElementById('reset-camera-btn').addEventListener('click', async () => {
-      const defaults = {
-        brightness: 60,
-        contrast: 40,
-        saturation: 80,
-        gain: 50,
-        exposure: -5,
-        auto_exposure: true
-      };
-      
-      try {
-        const res = await fetch('/camera_settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(defaults)
-        });
-        
-        if (res.ok) {
-          carregarConfiguracoesCamera();
-          alert('Configurações restauradas aos padrões');
-        }
-      } catch (e) {
-        console.error('Erro ao restaurar configurações:', e);
-      }
-    });
-
-    // Carregar configurações ao iniciar
-    carregarConfiguracoesCamera();
-
-    function formatarInfo(info) {
-      if (!info || Object.keys(info).length === 0) {
-        return '<div style="color: #999; text-align: center; padding: 20px;">Nenhuma informação disponível</div>';
-      }
-
-      let html = '';
-      for (const [chave, valor] of Object.entries(info)) {
-        if (valor && valor !== '') {
-          const labelFormatado = chave
-            .replace(/_/g, ' ')
-            .split(' ')
-            .map(p => p.charAt(0).toUpperCase() + p.slice(1))
-            .join(' ');
-          html += `
-            <div class="info-row">
-              <label>${labelFormatado}:</label>
-              <value>${valor}</value>
-            </div>
-          `;
-        }
-      }
-      return html || '<div style="color: #999; text-align: center; padding: 10px;">Sem informações adicionais</div>';
-    }
-
-    function getStatusBadge(status) {
-      if (status === 'encontrado') {
-        return '<div class="status-badge found"><span class="status-indicator"></span> ✓ Encontrado</div>';
-      } else if (status === 'não encontrado') {
-        return '<div class="status-badge not-found"><span class="status-indicator"></span> ⚠ Não encontrado</div>';
-      } else {
-        return '<div class="status-badge waiting"><span class="status-indicator"></span> Aguardando leitura</div>';
-      }
-    }
-
-    async function pollDados() {
-      try {
-        const res = await fetch('/dados');
-        if (!res.ok) throw new Error('Erro na resposta');
-        
-        const dados = await res.json();
-        
-        // Atualizar QR Code
-        document.getElementById('qr-content').textContent = dados.conteudo || 'Aguardando...';
-        document.getElementById('qr-time').textContent = dados.timestamp || '-';
-        
-        // Atualizar Região
-        document.getElementById('regiao').textContent = dados.regiao || 'Aguardando...';
-        
-        // Atualizar Tipo
-        document.getElementById('tipo-dado').textContent = dados.tipo || '-';
-        
-        // Atualizar Informações Detalhadas
-        document.getElementById('info-details').innerHTML = formatarInfo(dados.informacoes);
-        
-        // Adicionar status
-        const infoDetails = document.getElementById('info-details');
-        infoDetails.innerHTML += getStatusBadge(dados.status);
-        
-      } catch (e) {
-        console.warn('Erro ao buscar dados:', e);
-      } finally {
-        setTimeout(pollDados, 500);
-      }
-    }
-    
-    pollDados();
-  </script>
 </body>
+<script>
+
+async function atualizarPainel() {
+
+    try {
+
+        const response = await fetch('/dados');
+
+        const data = await response.json();
+
+        // QR CODE
+        document.getElementById('qr-content').innerText =
+            data.conteudo || 'Aguardando...';
+
+        // REGIÃO
+        document.getElementById('regiao').innerText =
+            data.regiao || '-';
+
+        // TIPO
+        document.getElementById('tipo-dado').innerText =
+            data.tipo || '-';
+
+        // HORÁRIO
+        document.getElementById('qr-time').innerText =
+            data.timestamp || '-';
+
+        // DETALHES
+        const details = document.getElementById('info-details');
+
+        if (
+            data.informacoes &&
+            Object.keys(data.informacoes).length > 0
+        ) {
+
+            details.innerHTML = '';
+
+            Object.entries(data.informacoes).forEach(([key, value]) => {
+
+                details.innerHTML += `
+                    <div class="info-row">
+                        <label>${key}</label>
+                        <div class="value">${value}</div>
+                    </div>
+                `;
+
+            });
+
+        }
+
+    } catch (err) {
+
+        console.error('Erro ao atualizar painel:', err);
+
+    }
+
+}
+
+// Atualiza a cada 500ms
+setInterval(atualizarPainel, 500);
+
+</script>
 </html>
