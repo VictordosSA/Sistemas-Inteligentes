@@ -1,7 +1,7 @@
 #include <Servo.h>
 
 // Definir pinos dos servos
-#define SERVO1_PIN 9
+#define SERVO1_PIN 2
 #define SERVO2_PIN 10
 
 // Criar objetos servo
@@ -9,8 +9,11 @@ Servo servo1;
 Servo servo2;
 
 // Variáveis para armazenar posições atuais
-int pos1 = 90;  // Posição inicial servo 1
-int pos2 = 90;  // Posição inicial servo 2
+int pos1 = 90;  // Posição neutra/stop servo 1
+int pos2 = 90;  // Posição neutra/stop servo 2
+
+// Tempo padrão (ms) que um comando sem duração fará o servo se mover antes de retornar a neutro
+const unsigned long DEFAULT_MOVE_MS = 200;
 
 void setup() {
   // Inicializar comunicação serial
@@ -21,11 +24,13 @@ void setup() {
   servo1.attach(SERVO1_PIN);
   servo2.attach(SERVO2_PIN);
 
-  // Mover servos para posição inicial
+  // Mover servos para posição neutra inicial
+  pos1 = 90;
+  pos2 = 90;
   servo1.write(pos1);
   servo2.write(pos2);
 
-  Serial.println("Servos inicializados na posicao 90 graus");
+  Serial.println("Servos inicializados na posicao neutra (90 graus)");
 }
 
 void loop() {
@@ -37,64 +42,60 @@ void loop() {
     Serial.print("Comando recebido: ");
     Serial.println(comando);
 
-    // Processar comando
-    if (comando.startsWith("SERVO1:")) {
-      // Comando para servo 1: "SERVO1:90"
-      int pos = comando.substring(7).toInt();
-      if (pos >= 0 && pos <= 180) {
-        pos1 = pos;
-        servo1.write(pos1);
-        Serial.print("Servo 1 movido para: ");
-        Serial.println(pos1);
+    // função auxiliar para processar subcomando e garantir retorno ao neutro
+    auto process_and_return = [&](String sub) {
+      sub.trim();
+      int moveDur = 0;
+      if (sub.startsWith("SERVO1:")) {
+        String rest = sub.substring(7);
+        int colon = rest.indexOf(':');
+        int ang = (colon > 0) ? rest.substring(0, colon).toInt() : rest.toInt();
+        moveDur = (colon > 0) ? rest.substring(colon + 1).toInt() : 0;
+        if (ang >= 0 && ang <= 180) {
+          servo1.write(ang);
+          Serial.print("Servo 1 movido para: ");
+          Serial.println(ang);
+          if (moveDur <= 0) moveDur = DEFAULT_MOVE_MS;
+          delay(moveDur);
+          servo1.write(90); // garante parada/neutra
+          Serial.println("Servo 1 retornou a neutro (90)");
+        } else {
+          Serial.println("Erro: Posicao invalida para servo 1 (0-180)");
+        }
+      } else if (sub.startsWith("SERVO2:")) {
+        String rest = sub.substring(7);
+        int colon = rest.indexOf(':');
+        int ang = (colon > 0) ? rest.substring(0, colon).toInt() : rest.toInt();
+        moveDur = (colon > 0) ? rest.substring(colon + 1).toInt() : 0;
+        if (ang >= 0 && ang <= 180) {
+          servo2.write(ang);
+          Serial.print("Servo 2 movido para: ");
+          Serial.println(ang);
+          if (moveDur <= 0) moveDur = DEFAULT_MOVE_MS;
+          delay(moveDur);
+          servo2.write(90); // garante parada/neutra
+          Serial.println("Servo 2 retornou a neutro (90)");
+        } else {
+          Serial.println("Erro: Posicao invalida para servo 2 (0-180)");
+        }
       } else {
-        Serial.println("Erro: Posicao invalida para servo 1 (0-180)");
+        Serial.println("Subcomando invalido: " + sub);
       }
-    }
-    else if (comando.startsWith("SERVO2:")) {
-      // Comando para servo 2: "SERVO2:45"
-      int pos = comando.substring(7).toInt();
-      if (pos >= 0 && pos <= 180) {
-        pos2 = pos;
-        servo2.write(pos2);
-        Serial.print("Servo 2 movido para: ");
-        Serial.println(pos2);
-      } else {
-        Serial.println("Erro: Posicao invalida para servo 2 (0-180)");
-      }
-    }
-    else if (comando.indexOf(",") > 0) {
-      // Comando combinado: "SERVO1:90,SERVO2:45"
+    };
+
+    // se houver vírgula, trata comandos combinados
+    if (comando.indexOf(",") > 0) {
       int virgulaIndex = comando.indexOf(",");
       String cmd1 = comando.substring(0, virgulaIndex);
       String cmd2 = comando.substring(virgulaIndex + 1);
-
-      // Processar primeiro servo
-      if (cmd1.startsWith("SERVO1:")) {
-        int pos = cmd1.substring(7).toInt();
-        if (pos >= 0 && pos <= 180) {
-          pos1 = pos;
-          servo1.write(pos1);
-          Serial.print("Servo 1 movido para: ");
-          Serial.println(pos1);
-        }
-      }
-
-      // Processar segundo servo
-      if (cmd2.startsWith("SERVO2:")) {
-        int pos = cmd2.substring(7).toInt();
-        if (pos >= 0 && pos <= 180) {
-          pos2 = pos;
-          servo2.write(pos2);
-          Serial.print("Servo 2 movido para: ");
-          Serial.println(pos2);
-        }
-      }
-    }
-    else {
-      Serial.println("Comando invalido. Use: SERVO1:angulo ou SERVO2:angulo ou SERVO1:angulo,SERVO2:angulo");
+      process_and_return(cmd1);
+      process_and_return(cmd2);
+    } else {
+      // comando simples
+      process_and_return(comando);
     }
   }
 
   // Pequeno delay para estabilidade
-  delay(50);
+  delay(10);
 }

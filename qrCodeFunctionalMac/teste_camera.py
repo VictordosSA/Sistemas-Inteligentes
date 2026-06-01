@@ -6,9 +6,10 @@ import threading
 try:
     import serial
     import serial.tools.list_ports
-    arduino_connected = True
+    PY_SERIAL_AVAILABLE = True
 except ImportError:
-    arduino_connected = False
+    serial = None
+    PY_SERIAL_AVAILABLE = False
     print("[WARN] pyserial não instalado. Instale com: pip install pyserial")
     print("Comunicação com Arduino será desabilitada.")
 
@@ -18,6 +19,34 @@ except ModuleNotFoundError as e:
     print("[ERRO] Módulo Flask não instalado:", e)
     print("Instale com: /usr/local/bin/python3 -m pip install Flask")
     raise SystemExit(1)
+
+# Inicializa a app Flask antes de declarar rotas (resolve NameError: app is not defined)
+import pathlib
+# ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]  # .../Sistemas-Inteligentes
+# app = Flask(__name__, template_folder=str(ROOT_DIR / "templates"))
+
+# -> Seleciona automaticamente a pasta de templates correta (prioriza a pasta local do script)
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent            # .../qrCodeFunctionalMac
+REPO_ROOT = SCRIPT_DIR.parent                                   # .../Sistemas-Inteligentes
+
+_possible_template_dirs = [
+    SCRIPT_DIR / "templates",   # ./qrCodeFunctionalMac/templates (prioridade)
+    REPO_ROOT / "templates",    # ./Sistemas-Inteligentes/templates (fallback)
+]
+
+template_folder = None
+for _p in _possible_template_dirs:
+    if _p.exists() and any(_p.glob("*.html")):
+        template_folder = str(_p)
+        break
+
+if template_folder is None:
+    # fallback sensato: usa a pasta local (mesmo que não contenha arquivos) e avisa
+    template_folder = str(_possible_template_dirs[0])
+    print(f"[WARN] Nenhum template .html encontrado em {_possible_template_dirs}, usando {template_folder}")
+
+print(f"[INFO] Flask templates => {template_folder}")
+app = Flask(__name__, template_folder=template_folder)
 
 # Tenta usar pyzbar; se falhar, fallback para OpenCV QRCodeDetector
 use_pyzbar = False
@@ -29,7 +58,60 @@ except Exception as e:
     print("Dica: instale zbar (Homebrew): brew install zbar")
     print("Usando detector nativo do OpenCV como fallback (não precisa de zbar).")
 
-app = Flask(__name__)
+# Inicializa detector OpenCV (fallback quando pyzbar não estiver disponível)
+try:
+    if not use_pyzbar:
+        _cv_detector = cv2.QRCodeDetector()
+        print("[OK] Detector QR do OpenCV inicializado")
+    else:
+        _cv_detector = None
+except Exception as e:
+    _cv_detector = None
+    print(f"[WARN] Falha ao inicializar QRCodeDetector do OpenCV: {e}")
+
+def listar_cameras_disponiveis(max_index=6, timeout=1.0):
+    """Detecta câmeras conectadas tentando abrir índices 0..max_index-1.
+    Retorna lista de dicts: {'indice': int, 'nome': str}.
+    """
+    cameras = []
+    for i in range(max_index):
+        cap = None
+        try:
+            if sys.platform == "darwin":
+                cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION)
+            elif sys.platform == "win32":
+                cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+            else:
+                cap = cv2.VideoCapture(i)
+
+            if not cap or not cap.isOpened():
+                try:
+                    if cap:
+                        cap.release()
+                except:
+                    pass
+                continue
+
+            # tentar ler um frame rápido para confirmar funcionamento
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            ok, _ = cap.read()
+            if ok:
+                cameras.append({"indice": i, "nome": f"Câmera {i}"})
+
+            try:
+                cap.release()
+            except:
+                pass
+
+        except Exception:
+            try:
+                if cap:
+                    cap.release()
+            except:
+                pass
+            continue
+
+    return cameras
 
 # Configuração opcional de banco de dados MySQL/MariaDB
 try:
@@ -83,129 +165,180 @@ camera_lock = threading.Lock()
 camera_thread_running = True
 
 # Configuração do Arduino
-arduino_port = os.environ.get("ARDUINO_PORT", "COM3")  # Windows padrão
+import importlib
+arduino_port = os.environ.get("ARDUINO_PORT", "/dev/cu.usbmodem1101")  # permite sobrescrever pelo ambiente
 arduino_baudrate = 9600
 arduino_serial = None
 arduino_lock = threading.Lock()
+arduino_connected = False
 last_servo_regiao = None
 
-# Mapeamento de regiões para comandos dos servos
+# Novo: rate limit para evitar envios muito frequentes ao Arduino (segundos)
+RATE_LIMIT_SECONDS = float(os.environ.get("SERVO_RATE_LIMIT", 3.0))
+last_sent_times = {}  # mapeamento: região_normalizada -> timestamp do último envio
+
+# lock para proteger sequências de ação de servo
+servo_action_lock = threading.Lock()
+
+def try_connect_arduino():
+    """Tenta abrir a porta serial do Arduino e seta arduino_connected."""
+    global arduino_serial, arduino_connected, arduino_port
+    if not PY_SERIAL_AVAILABLE:
+        arduino_connected = False
+        print("[SERIAL] pyserial não disponível, pulando tentativa de conexão")
+        return False
+    try:
+        with arduino_lock:
+            if arduino_serial and arduino_serial.is_open:
+                return True
+            arduino_serial = serial.Serial(arduino_port, arduino_baudrate, timeout=1)
+            time.sleep(0.5)
+            arduino_connected = arduino_serial.is_open
+            print(f"[SERIAL] Conectado ao Arduino em {arduino_port}: {arduino_connected}")
+            return arduino_connected
+    except Exception as e:
+        arduino_connected = False
+        arduino_serial = None
+        print(f"[SERIAL] Falha ao conectar {arduino_port}: {e}")
+        return False
+
+def arduino_reconnect_loop(interval=5):
+    """Loop em background que tenta reconectar periodicamente se desconectado."""
+    while True:
+        if not arduino_connected:
+            try_connect_arduino()
+        time.sleep(interval)
+
+# iniciar tentativa de conexão imediata e thread de reconexão
+try_connect_arduino()
+threading.Thread(target=arduino_reconnect_loop, args=(5,), daemon=True).start()
+
+# Auxiliar para enviar comando ao Arduino com proteção
+def enviar_comando_arduino(cmd):
+    """Envia string (seguida de newline) ao Arduino se conectado."""
+    global arduino_serial, arduino_connected
+    if not arduino_connected:
+        raise RuntimeError("Arduino não conectado")
+    try:
+        with arduino_lock:
+            arduino_serial.write((str(cmd).strip() + "\n").encode('utf-8'))
+    except Exception as e:
+        print(f"[SERIAL] Erro ao enviar comando: {e}")
+        # marca desconectado para forçar reconexão
+        arduino_connected = False
+        try:
+            if arduino_serial:
+                arduino_serial.close()
+        except:
+            pass
+        arduino_serial = None
+
+# Mapeamento de regiões para comandos dos servos (mantido para referência textual)
 REGIAO_COMANDOS = {
-    "Norte": "SERVO1:90,SERVO2:45",      # Servo 1 para 90°, Servo 2 para 45°
-    "Nordeste": "SERVO1:135,SERVO2:90",  # Servo 1 para 135°, Servo 2 para 90°
-    "Centro-Oeste": "SERVO1:45,SERVO2:135", # Servo 1 para 45°, Servo 2 para 135°
-    "Sudeste": "SERVO1:0,SERVO2:180",    # Servo 1 para 0°, Servo 2 para 180°
-    "Sul": "SERVO1:180,SERVO2:0",        # Servo 1 para 180°, Servo 2 para 0°
-    "Não encontrada": "SERVO1:90,SERVO2:90"  # Posição neutra
+    "Norte": "SERVO1:180:700,SERVO2:45",
+    "Nordeste": "SERVO1:135,SERVO2:90",
+    "Centro-Oeste": "SERVO1:45,SERVO2:135",
+    "Sudeste": "SERVO1:0,SERVO2:180",
+    "Sul": "SERVO1:180,SERVO2:0",
+    "Não encontrada": "SERVO1:90,SERVO2:90"
 }
 
-# Instância do detector OpenCV (usada no fallback)
-_cv_detector = cv2.QRCodeDetector()
+# Novo: mapeamento de região -> ID numérico esperado pelo sketch Arduino (1..5)
+REGIAO_ID_MAP = {
+    "norte": "1",
+    "nordeste": "2",
+    "centro-oeste": "3",
+    "centrooeste": "3",
+    "sudeste": "4",
+    "sul": "5",
+    "nao encontrada": "5",
+    "não encontrada": "5"
+}
 
-# Função para listar câmeras disponíveis
-def listar_cameras_disponiveis():
-    """Lista todas as câmeras disponíveis no sistema com melhor detecção."""
-    cameras = []
-    max_cameras = 20
-    consecutive_failures = 0
-    max_consecutive_failures = 5  # Parar após 5 falhas consecutivas
-    
-    print("[INFO] Escaneando câmeras disponíveis...")
-    
-    for i in range(max_cameras):
-        try:
-            # Tentar abrir câmera
-            cap = cv2.VideoCapture(i)
-            
-            if cap is not None and cap.isOpened():
-                # Tentar ler um frame para verificar se a câmera funciona
-                try:
-                    ret, frame = cap.read()
-                    
-                    if ret and frame is not None:  # Se conseguiu ler frame, câmera é válida
-                        consecutive_failures = 0
-                        
-                        # Tentar obter nome da câmera
-                        try:
-                            nome_camera = cap.getBackendName()
-                            if not nome_camera or nome_camera == "":
-                                nome_camera = "Desconhecido"
-                        except:
-                            nome_camera = "Desconhecido"
-                        
-                        # Melhor nomeação
-                        if i == 0:
-                            nome_exibicao = f"📱 Câmera Interna (Notebook) - {nome_camera}"
-                        else:
-                            nome_exibicao = f"📷 Câmera Externa {i} - {nome_camera}"
-                        
-                        cameras.append({
-                            "indice": i,
-                            "nome": nome_exibicao
-                        })
-                        print(f"[OK] Câmera {i} detectada: {nome_exibicao}")
-                    else:
-                        consecutive_failures += 1
-                        print(f"[SKIP] Índice {i}: não conseguiu capturar frame")
-                except Exception as e:
-                    consecutive_failures += 1
-                    print(f"[SKIP] Índice {i}: {str(e)[:40]}")
-                finally:
-                    try:
-                        cap.release()
-                    except:
-                        pass
-            else:
-                consecutive_failures += 1
-                print(f"[SKIP] Índice {i}: câmera não abriu")
-            
-            # Parar se muitas falhas consecutivas
-            if consecutive_failures >= max_consecutive_failures:
-                print(f"[INFO] Parando varredura após {max_consecutive_failures} falhas consecutivas")
-                break
-            
-        except Exception as e:
-            consecutive_failures += 1
-            print(f"[DEBUG] Índice {i}: {str(e)[:40]}")
-    
-    if not cameras:
-        print("[WARN] Nenhuma câmera detectada! Tente:")
-        print("  - Verificar se a câmera está conectada")
-        print("  - Fechar outros aplicativos que usam câmera")
-        print("  - Reiniciar o script")
+def executar_acao_norte():
+    """Executa ação para região 'Norte' enviando o comando SERVO ao Arduino."""
+    global arduino_connected, last_sent_times, last_servo_regiao
+    norm = _normalize_regiao("Norte")
+    now = time.time()
+    # respeitar cooldown
+    if norm in last_sent_times and (now - last_sent_times[norm]) < RATE_LIMIT_SECONDS:
+        print(f"[RATE] Ignorando ação 'Norte' — cooldown ativo ({now - last_sent_times[norm]:.1f}s < {RATE_LIMIT_SECONDS}s)")
+        return
+
+    if not PY_SERIAL_AVAILABLE:
+        print("[AÇÃO] pyserial não disponível, ação 'Norte' abortada")
+        return
+
+    # tenta adquirir lock para não executar duas sequências simultâneas
+    if not servo_action_lock.acquire(blocking=False):
+        print("[AÇÃO] Outra ação de servo em execução, ignorando 'Norte'")
+        return
+
+    try:
+        print("[AÇÃO] Iniciando sequência para região 'Norte'...")
+        if not conectar_arduino():
+            print("[AÇÃO] Arduino não conectado, abortando ação 'Norte'")
+            return
+
+        comando = REGIAO_COMANDOS.get("Norte")
+        if not comando:
+            print("[AÇÃO] Nenhum comando definido para 'Norte'")
+            return
+
+        sucesso = enviar_comando_arduino(comando)
+        if sucesso:
+            last_sent_times[norm] = time.time()
+            last_servo_regiao = "Norte"
+            print("[AÇÃO] Comando 'Norte' enviado ao Arduino:", comando)
+        else:
+            print("[AÇÃO] Falha ao enviar comando 'Norte' ao Arduino")
+    except Exception as e:
+        print(f"[ERRO] executar_acao_norte: {e}")
+    finally:
+        servo_action_lock.release()
+
+# Se ARDUINO_PORT não for setado, tente detectar automaticamente ao iniciar
+if arduino_port is None:
+    detected = auto_detect_arduino()
+    if detected:
+        arduino_port = detected
     else:
-        print(f"[INFO] Total de câmeras encontradas: {len(cameras)}")
-    
-    return cameras
+        # fallback comum no macOS
+        arduino_port = os.environ.get("ARDUINO_PORT", "/dev/cu.usbmodem1101")
+        print(f"[AUTO] Usando porta padrão para Arduino: {arduino_port}")
 
 # Funções para controle do Arduino
 def conectar_arduino():
     """Conecta ao Arduino via porta serial."""
-    global arduino_serial
-    
-    if not arduino_connected:
-        print("[WARN] pyserial não disponível. Comunicação com Arduino desabilitada.")
+    global arduino_serial, arduino_connected
+
+    if not PY_SERIAL_AVAILABLE:
+        print("[WARN] pyserial não instalado. Comunicação com Arduino desabilitada.")
         return False
-    
+
     try:
         with arduino_lock:
             if arduino_serial is not None and arduino_serial.is_open:
+                arduino_connected = True
                 return True
-            
+
             # Tentar conectar na porta especificada
             arduino_serial = serial.Serial(arduino_port, arduino_baudrate, timeout=1)
             time.sleep(2)  # Aguardar inicialização
-            
+
             if arduino_serial.is_open:
+                arduino_connected = True
                 print(f"[OK] Arduino conectado na porta {arduino_port}")
                 return True
             else:
+                arduino_connected = False
                 print(f"[ERRO] Falha ao abrir porta {arduino_port}")
                 return False
-                
+
     except Exception as e:
-        print(f"[ERRO] Falha ao conectar Arduino: {str(e)[:100]}")
+        arduino_connected = False
         arduino_serial = None
+        print(f"[ERRO] Falha ao conectar Arduino: {str(e)[:200]}")
         return False
 
 def desconectar_arduino():
@@ -253,33 +386,55 @@ def enviar_comando_arduino(comando):
         return False
 
 def controlar_servo_por_regiao(regiao):
-    """Controla os servos baseado na região detectada."""
-    global last_servo_regiao
-
+    """Controla os servos baseado na região detectada — envia string de comando do REGIAO_COMANDOS ao Arduino."""
+    global last_servo_regiao, last_sent_times
     regiao_normalizada = _normalize_regiao(regiao)
-    comando = None
+    if not regiao_normalizada:
+        print(f"[SERVO] Região inválida: {regiao}")
+        return False
 
-    for chave, valor in REGIAO_COMANDOS.items():
+    # procurar comando mapeado na tabela REGIAO_COMANDOS (comparação normalizada)
+    comando = None
+    chave_encontrada = None
+    for chave, cmd in REGIAO_COMANDOS.items():
         if _normalize_regiao(chave) == regiao_normalizada:
-            comando = valor
-            regiao = chave
+            comando = cmd
+            chave_encontrada = chave
             break
 
     if comando is None:
         comando = REGIAO_COMANDOS.get("Não encontrada")
-        print(f"[SERVO] Região '{regiao}' não mapeada, usando posição neutra")
-        regiao = "Não encontrada"
+        chave_encontrada = "Não encontrada"
+        print(f"[SERVO] Região '{regiao}' não mapeada, usando fallback '{chave_encontrada}' -> {comando}")
 
-    if regiao == last_servo_regiao:
-        return True
+    # Evitar envios repetidos: mesma região e cooldown ativo
+    now = time.time()
+    if chave_encontrada == last_servo_regiao:
+        last_time = last_sent_times.get(regiao_normalizada, 0)
+        if (now - last_time) < RATE_LIMIT_SECONDS:
+            print(f"[RATE] Ignorando envio para '{chave_encontrada}' — já enviado há {now - last_time:.1f}s (limite {RATE_LIMIT_SECONDS}s)")
+            return False
 
-    sucesso = enviar_comando_arduino(comando)
-    if sucesso:
-        last_servo_regiao = regiao
-        print(f"[SERVO] Comando enviado para região '{regiao}': {comando}")
-    else:
-        print(f"[SERVO] Falha ao enviar comando para região '{regiao}'")
-    return sucesso
+    # Não enviar se uma ação de servo já estiver em execução
+    if not servo_action_lock.acquire(blocking=False):
+        print(f"[SERVO] Ação de servo em execução, ignorando comando para '{regiao}'")
+        return False
+    try:
+        # garantir conexão antes de enviar
+        if PY_SERIAL_AVAILABLE and not conectar_arduino():
+            print("[SERVO] Não foi possível conectar ao Arduino para enviar comando")
+            return False
+
+        sucesso = enviar_comando_arduino(comando)
+        if sucesso:
+            last_sent_times[regiao_normalizada] = time.time()
+            last_servo_regiao = chave_encontrada
+            print(f"[SERVO] Comando enviado para região '{chave_encontrada}': {comando}")
+        else:
+            print(f"[SERVO] Falha ao enviar comando para região '{chave_encontrada}'")
+        return sucesso
+    finally:
+        servo_action_lock.release()
 
 def conectar_db():
     if mysql is None:
@@ -700,8 +855,12 @@ def rodar_camera():
 
                 if info.get("regiao"):
                     print(f"[DB] {info.get('tipo')} encontrado: {conteudo} → {regiao_detectada}")
-                    # Controlar servos baseado na região detectada
-                    controlar_servo_por_regiao(regiao_detectada)
+                    # Executa ação especial para Norte, senão usa o mapeamento padrão
+                    if _normalize_regiao(regiao_detectada) == _normalize_regiao("Norte"):
+                        # dispara a sequência sem bloquear a thread principal de câmera
+                        threading.Thread(target=executar_acao_norte, daemon=True).start()
+                    else:
+                        controlar_servo_por_regiao(regiao_detectada)
                 else:
                     print(f"[DB] QR Code lido, mas valor não está na base: {conteudo}")
                     # Enviar comando neutro para região não encontrada
@@ -846,12 +1005,11 @@ def enviar_dados():
 
 if __name__ == "__main__":
     print("[INFO] Iniciando sistema...")
-
     if sys.platform == "darwin":
         print("[NOTICE] macOS detectado. Se usar pyzbar, instale zbar: brew install zbar")
 
-    # Tentar conectar ao Arduino
-    if arduino_connected:
+    # Tentar conectar ao Arduino só se pyserial estiver disponível
+    if PY_SERIAL_AVAILABLE:
         print("[INFO] Tentando conectar ao Arduino...")
         if conectar_arduino():
             print("[OK] Arduino conectado com sucesso!")
