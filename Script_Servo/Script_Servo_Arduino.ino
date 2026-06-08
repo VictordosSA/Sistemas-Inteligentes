@@ -32,7 +32,7 @@ int pos3 = 90;
 int pos4 = 89;
 
 // --- Limites de segurança ---
-int limiteMin = 20;
+int limiteMin = 5;
 int limiteMax = 180;
 
 // --- Configurações de movimento ---
@@ -203,12 +203,12 @@ void p2() {
 
 void p3() {
   Serial.println("P3: Posicionando para pegar");
-  executarMovimento(GARRA_FECHADA, 20, 70, 97);
+  executarMovimento(GARRA_FECHADA, 15, 70, 97);
 }
 
 void p4() {
   Serial.println("P4: Fechando garra no objeto");
-  executarMovimento(GARRA_FECHADA, 20, 90, 97);
+  executarMovimento(GARRA_FECHADA, 15, 90, 97);
 }
 
 void p5() {
@@ -222,12 +222,12 @@ void p5() {
 
 void p6() {
   Serial.println("P6: Posicionando no destino");
-  executarMovimento(GARRA_SEGURANDO, 90, 130, 180);
+  executarMovimento(GARRA_SEGURANDO, 100, 130, 180);
 }
 
 void p7() {
   Serial.println("P7: Soltando objeto suavemente");
-  executarMovimento(GARRA_ABERTA, 90, 90, 180);
+  executarMovimento(GARRA_ABERTA, 100, 90, 180);
 
 String comando = Serial.readStringUntil('\n');
     comando.trim();  // Remover espaços em branco
@@ -244,6 +244,7 @@ String comando = Serial.readStringUntil('\n');
         int colon = rest.indexOf(':');
         int ang = (colon > 0) ? rest.substring(0, colon).toInt() : rest.toInt();
         moveDur = (colon > 0) ? rest.substring(colon + 1).toInt() : 0;
+        delay(1000);
         if (ang >= 0 && ang <= 180) {
           servo1.write(ang);
           Serial.print("Servo 1 movido para: ");
@@ -260,7 +261,7 @@ String comando = Serial.readStringUntil('\n');
         int colon = rest.indexOf(':');
         int ang = (colon > 0) ? rest.substring(0, colon).toInt() : rest.toInt();
         moveDur = (colon > 0) ? rest.substring(colon + 1).toInt() : 0;
-        delay(2000);
+        delay(9000);
         if (ang >= 0 && ang <= 180) {
           servo2.write(ang);
           Serial.print("Servo 2 movido para: ");

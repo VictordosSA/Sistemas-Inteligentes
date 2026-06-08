@@ -235,10 +235,10 @@ def enviar_comando_arduino(cmd):
 
 # Mapeamento de regiões para comandos dos servos (mantido para referência textual)
 REGIAO_COMANDOS = {
-    "Norte": "SERVO1:180:490",
-    "Nordeste": "SERVO1:89:3390",
-    "Centro-Oeste": "SERVO2:180:490",
-    "Sudeste": "SERVO2:89:3350",
+    "Norte": "SERVO1:180:560",
+    "Nordeste": "SERVO1:89:3690",
+    "Centro-Oeste": "SERVO2:180:560",
+    "Sudeste": "SERVO2:89:3690",
     "Sul": "",
     "Não encontrada": "SERVO1:90,SERVO2:90"
 }
